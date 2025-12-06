@@ -8,7 +8,13 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "arcade (>=3.3.3,<4.0.0)"
+    "arcade (>=3.3.3,<4.0.0)",
+    "requests (>=2.32.5,<3.0.0)",
+    "pendulum (>=3.1.0,<4.0.0)",
+    "django (>=6.0,<7.0)",
+    "pandas (>=2.3.3,<3.0.0)",
+    "panda3d (>=1.10.15,<2.0.0)",
+    "adventurelib (>=1.2.1,<2.0.0)"
 ]
 
 
