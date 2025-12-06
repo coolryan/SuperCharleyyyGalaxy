@@ -14,7 +14,12 @@ dependencies = [
     "django (>=6.0,<7.0)",
     "pandas (>=2.3.3,<3.0.0)",
     "panda3d (>=1.10.15,<2.0.0)",
-    "adventurelib (>=1.2.1,<2.0.0)"
+    "adventurelib (>=1.2.1,<2.0.0)",
+    "pytiled-parser (>=2.2.9,<3.0.0)",
+    "tmxlib (>=0.2.1,<0.3.0)",
+    "simplejson (>=3.20.2,<4.0.0)",
+    "pyyaml (>=6.0.3,<7.0.0)",
+    "pysimplegui (>=5.0.8.3,<6.0.0.0)"
 ]
 
 
