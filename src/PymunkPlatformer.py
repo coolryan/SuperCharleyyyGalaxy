@@ -46,23 +46,136 @@ PLAYER_MAX_HORIZONTAL_SPEED, PLAYER_MAX_VERTICAL_SPEED = 450, 1600
 # Force applied while on the ground
 PLAYER_MOVE_FORCE_ON_GROUND = 8000
 
+# Force appiled when moving left/right in the air
+PLAYER_MOVE_FORCE_IN_AIR = 900
+
+# Strength of a jump
+PLAYER_JUMP_IMPULSE = 1800
+
+DEAD_ZONE = 0.1
+
+# Constants used to track if the player is facing left or right
+RIGHT_FACING, LEFT_FACING = 0, 1
+
+# How many pixels to move before we change the texture in the walking animation
+DISTANCE_TO_CHANGE_TEXTURE = 20
+
+#How much force to put on the bullet
+BULLET_MOVE_FORCE = 4500
+
+# Mass of the bullet
+BULLET_MASS = 0.1
+
+# Make bullet less affected by gravity
+BULLET_GRAVITY = 300
+
+class PlayerSprite(arcade.Sprite):
+    """ Player Sprite """
+    def __init__(self):
+        """ Init """
+        # Let parent initialize
+        super().__init__(scale=SPRITE_SCALING_PLAYER)
+
+        # Images from Kenney.nl's Character pack
+        # main_path = ":resources:images/animated_characters/female_adventurer/femaleAdventurer"
+        main_path = ":resources:images/animated_characters/female_person/femalePerson"
+        # main_path = ":resources:images/animated_characters/male_person/malePerson"
+        # main_path = ":resources:images/animated_characters/male_adventurer/maleAdventurer"
+        # main_path = ":resources:images/animated_characters/zombie/zombie"
+        # main_path = ":resources:images/animated_characters/robot/robot"
+
+        # Load textures for idle, jump, and fall states
+        idle_texture = arcade.load_texture(f"{main_path}_idle.png")
+        jump_texture = arcade.load_texture(f"{main_path}_jump.png")
+        fall_texture = arcade.load_texture(f"{main_path}_fall.png") 
+        # Make pairs of textures facing left and right
+        self.idle_texture_pair = idle_texture, idle_texture.flip_left_right()
+        self.jump_texture_pair = jump_texture, jump_texture.flip_left_right()
+        self.fall_texture_pair = fall_texture, fall_texture.flip_left_right()
+
+        # Load textures for walking and make pairs of textures facing left and right
+        self.walk_textures = []
+        for i in range(8):
+            texture = arcade.load_texture(f"{main_path}_walk{i}.png")
+            self.walk_textures.append((texture, texture.flip_left_right()))
+
+        # Set the initial texture
+        self.texture = self.idle_texture_pair[0]
+
+        # Default to face-right
+        self.character_face_direction = RIGHT_FACING
+
+        # Index of our current texture
+        self.cur_texture = 0
+
+        # How far have we traveled horizontally since changing the texture
+        self.x_odometer = 0
+
+    def pymunk_moved(self, physics_engine, dx, dy, d_angle):
+        """ Handle being moved by the pymunk engine """
+        # Figure out if we need to face left or right
+        if dx < -DEAD_ZONE and self.character_face_direction == RIGHT_FACING:
+            self.character_face_direction = LEFT_FACING
+        elif dx > DEAD_ZONE and self.character_face_direction == LEFT_FACING:
+            self.character_face_direction = RIGHT_FACING
+
+        # Are we on the ground?
+        is_on_ground = physics_engine.is_on_ground(self)
+
+        # Add to the odometer how far we've moved
+        self.x_odometer += dx
+
+        # Jumping animation
+        if not is_on_ground:
+            if dy > DEAD_ZONE:
+                self.texture = self.jump_texture_pair[self.character_face_direction]
+                return
+            elif dy < -DEAD_ZONE:
+                self.texture = self.fall_texture_pair[self.character_face_direction]
+                return
+
+        # Idle animation
+        if abs(dx) <= DEAD_ZONE:
+            self.texture = self.idle_texture_pair[self.character_face_direction]
+            return
+
+        # Have we moved far enough to change the texture?
+        if abs(self.x_odometer) > DISTANCE_TO_CHANGE_TEXTURE:
+
+            # Reset the odometer
+            self.x_odometer = 0
+
+            # Advance the walking animation
+            self.cur_texture += 1
+            if self.cur_texture > 7:
+                self.cur_texture = 0
+            self.texture = self.walk_textures[self.cur_texture][self.character_face_direction]
+
+class BulletSprite(arcade.SpriteSolidColor):
+    """ Bullet Sprite """
+    def pymunk_moved(self, physics_engine, dx, dy, d_angle):
+        """ Handle when the sprite is moved by the physics engine. """
+        # If the bullet falls below the screen, remove it
+        if self.center_y < -100:
+            self.remove_from_sprite_lists()   
+
 class GameWindow(arcade.Window):
-    """ Main wimodw """
+    """ Main Window """
 
     def __init__(self, width, height, title):
-        """ Create the varaibles """
+        """ Create the variables """
 
         # Init the parent class
         super().__init__(width, height, title)
 
         # Player sprite
-        self.player_sprite: arcade.Sprite | None = None
+        self.player_sprite: PlayerSprite|None = None
 
         # Sprite lists we need
-        self.player_list: arcade.SpriteList | None = None
-        self.wall_list: arcade.SpriteList | None = None
-        self.bullet_list: arcade.SpriteList | None = None
-        self.item_list: arcade.SpriteList | None = None
+        self.player_list: arcade.SpriteList|None = None
+        self.wall_list: arcade.SpriteList|None = None
+        self.bullet_list: arcade.SpriteList|None = None
+        self.item_list: arcade.SpriteList|None = None
 
         # Track the current state of what key is pressed
         self.left_pressed: bool = False
@@ -76,6 +189,7 @@ class GameWindow(arcade.Window):
 
     def setup(self):
         """ Set up everything with the game """
+
         # Create the sprite lists
         self.player_list = arcade.SpriteList()
         self.bullet_list = arcade.SpriteList()
@@ -91,16 +205,13 @@ class GameWindow(arcade.Window):
         self.item_list = tile_map.sprite_lists["Dynamic Items"]
 
         # Create player sprite
-        self.player_sprite = arcade.Sprite(
-            ":resources:images/animated_characters/female_person/femalePerson_idle.png",
-            SPRITE_SCALING_PLAYER,
-        )
-        # Set player location
-        grid_x, grid_y = 1, 1
+        self.player_sprite = PlayerSprite()
 
+        # Set player location
+        grid_x = 1
+        grid_y = 1
         self.player_sprite.center_x = SPRITE_SIZE * grid_x + SPRITE_SIZE / 2
         self.player_sprite.center_y = SPRITE_SIZE * grid_y + SPRITE_SIZE / 2
-
         # Add to player sprite list
         self.player_list.append(self.player_sprite)
 
@@ -118,7 +229,20 @@ class GameWindow(arcade.Window):
         gravity = (0, -GRAVITY)
 
         # Create the physics engine
-        self.physics_engine = arcade.PymunkPhysicsEngine(damping=damping, gravity=gravity)
+        self.physics_engine = arcade.PymunkPhysicsEngine(damping=damping,gravity=gravity)
+
+        def wall_hit_handler(bullet_sprite, _wall_sprite, _arbiter, _space, _data):
+            """ Called for bullet/wall collision """
+            bullet_sprite.remove_from_sprite_lists()
+
+        self.physics_engine.add_collision_handler("bullet", "wall", post_handler=wall_hit_handler)
+
+        def item_hit_handler(bullet_sprite, item_sprite, _arbiter, _space, _data):
+            """ Called for bullet/wall collision """
+            bullet_sprite.remove_from_sprite_lists()
+            item_sprite.remove_from_sprite_lists()
+
+        self.physics_engine.add_collision_handler("bullet", "item", post_handler=item_hit_handler)
 
         # Add the player.
         # For the player, we set the damping to a lower value, which increases
@@ -130,15 +254,13 @@ class GameWindow(arcade.Window):
         # Friction is between two objects in contact. It is important to remember
         # in top-down games that friction moving along the 'floor' is controlled
         # by damping.
-        self.physics_engine.add_sprite(
-            self.player_sprite,
-            friction=PLAYER_FRICTION,
-            mass=PLAYER_MASS,
-            moment_of_inertia=arcade.PymunkPhysicsEngine.MOMENT_INF,
-            collision_type="player",
-            max_horizontal_velocity=PLAYER_MAX_HORIZONTAL_SPEED,
-            max_vertical_velocity=PLAYER_MAX_VERTICAL_SPEED,
-        )
+        self.physics_engine.add_sprite(self.player_sprite,
+                                    friction=PLAYER_FRICTION,
+                                    mass=PLAYER_MASS,
+                                    moment_of_inertia=arcade.PymunkPhysicsEngine.MOMENT_INF,
+                                    collision_type="player",
+                                    max_horizontal_velocity=PLAYER_MAX_HORIZONTAL_SPEED,
+                                    max_vertical_velocity=PLAYER_MAX_VERTICAL_SPEED)
 
         # Create the walls.
         # By setting the body type to PymunkPhysicsEngine.STATIC the walls can't
@@ -147,44 +269,112 @@ class GameWindow(arcade.Window):
         # PymunkPhysicsEngine.KINEMATIC objects will move, but are assumed to be
         # repositioned by code and don't respond to physics forces.
         # Dynamic is default.
-        self.physics_engine.add_sprite_list(
-            self.wall_list,
-            friction=WALL_FRICTION,
-            collision_type="wall",
-            body_type=arcade.PymunkPhysicsEngine.STATIC,
-        )
+        self.physics_engine.add_sprite_list(self.wall_list,
+                                            friction=WALL_FRICTION,
+                                            collision_type="wall",
+                                            body_type=arcade.PymunkPhysicsEngine.STATIC)
 
         # Create the items
-        self.physics_engine.add_sprite_list(
-            self.item_list, friction=DYNAMIC_ITEM_FRICTION, collision_type="item"
-        )
+        self.physics_engine.add_sprite_list(self.item_list,
+                                            friction=DYNAMIC_ITEM_FRICTION,
+                                            collision_type="item")
 
     def on_key_press(self, key, modifiers):
-        """ Called whenever a key is pressed. """
+        """Called whenever a key is pressed. """
+
         if key == arcade.key.LEFT:
             self.left_pressed = True
         elif key == arcade.key.RIGHT:
             self.right_pressed = True
+        elif key == arcade.key.UP:
+            # find out if player is standing on ground
+            if self.physics_engine.is_on_ground(self.player_sprite):
+                # She is! Go ahead and jump
+                impulse = (0, PLAYER_JUMP_IMPULSE)
+                self.physics_engine.apply_impulse(self.player_sprite, impulse)
 
     def on_key_release(self, key, modifiers):
-        """ Called whenever the user releases a key. """
+        """Called when the user releases a key. """
+
         if key == arcade.key.LEFT:
             self.left_pressed = False
         elif key == arcade.key.RIGHT:
             self.right_pressed = False
 
+    def on_mouse_press(self, x, y, button, modifiers):
+        """ Called whenever the mouse button is clicked. """
+
+        bullet = BulletSprite(width=20, height=5, color=arcade.color.DARK_YELLOW)
+        self.bullet_list.append(bullet)
+
+        # Position the bullet at the player's current location
+        start_x = self.player_sprite.center_x
+        start_y = self.player_sprite.center_y
+        bullet.position = self.player_sprite.position
+
+        # Get from the mouse the destination location for the bullet
+        # IMPORTANT! If you have a scrolling screen, you will also need
+        # to add in self.view_bottom and self.view_left.
+        dest_x = x
+        dest_y = y
+
+        # Do math to calculate how to get the bullet to the destination.
+        # Calculation the angle in radians between the start points
+        # and end points. This is the angle the bullet will travel.
+        x_diff = dest_x - start_x
+        y_diff = dest_y - start_y
+        angle = math.atan2(y_diff, x_diff)
+
+        # What is the 1/2 size of this sprite, so we can figure out how far
+        # away to spawn the bullet
+        size = max(self.player_sprite.width, self.player_sprite.height) / 2
+
+        # Use angle to to spawn bullet away from player in proper direction
+        bullet.center_x += size * math.cos(angle)
+        bullet.center_y += size * math.sin(angle)
+
+        # Set angle of bullet
+        bullet.angle = math.degrees(angle)
+
+        # Gravity to use for the bullet
+        # If we don't use custom gravity, bullet drops too fast, or we have
+        # to make it go too fast.
+        # Force is in relation to bullet's angle.
+        bullet_gravity = (0, -BULLET_GRAVITY)
+
+        # Add the sprite. This needs to be done AFTER setting the fields above.
+        self.physics_engine.add_sprite(bullet,
+                                    mass=BULLET_MASS,
+                                    damping=1.0,
+                                    friction=0.6,
+                                    collision_type="bullet",
+                                    gravity=bullet_gravity,
+                                    elasticity=0.9)
+
+        # Add force to bullet
+        force = (BULLET_MOVE_FORCE, 0)
+        self.physics_engine.apply_force(bullet, force)
+
     def on_update(self, delta_time):
         """ Movement and game logic """
+
+        is_on_ground = self.physics_engine.is_on_ground(self.player_sprite)
         # Update player forces based on keys pressed
         if self.left_pressed and not self.right_pressed:
             # Create a force to the left. Apply it.
-            force = (-PLAYER_MOVE_FORCE_ON_GROUND, 0)
+            if is_on_ground:
+                force = (-PLAYER_MOVE_FORCE_ON_GROUND, 0)
+            else:
+                force = (-PLAYER_MOVE_FORCE_IN_AIR, 0)
             self.physics_engine.apply_force(self.player_sprite, force)
             # Set friction to zero for the player while moving
             self.physics_engine.set_friction(self.player_sprite, 0)
         elif self.right_pressed and not self.left_pressed:
             # Create a force to the right. Apply it.
-            force = (PLAYER_MOVE_FORCE_ON_GROUND, 0)
+            if is_on_ground:
+                force = (PLAYER_MOVE_FORCE_ON_GROUND, 0)
+            else:
+                force = (PLAYER_MOVE_FORCE_IN_AIR, 0)
             self.physics_engine.apply_force(self.player_sprite, force)
             # Set friction to zero for the player while moving
             self.physics_engine.set_friction(self.player_sprite, 0)
