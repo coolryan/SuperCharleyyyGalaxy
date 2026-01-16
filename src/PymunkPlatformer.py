@@ -157,7 +157,7 @@ class BulletSprite(arcade.SpriteSolidColor):
         """ Handle when the sprite is moved by the physics engine. """
         # If the bullet falls below the screen, remove it
         if self.center_y < -100:
-            self.remove_from_sprite_lists()   
+            self.remove_from_sprite_lists()
 
 class GameWindow(arcade.Window):
     """ Main Window """
@@ -176,6 +176,7 @@ class GameWindow(arcade.Window):
         self.wall_list: arcade.SpriteList|None = None
         self.bullet_list: arcade.SpriteList|None = None
         self.item_list: arcade.SpriteList|None = None
+        self.moving_sprites_list: arcade.SpriteList|None = None
 
         # Track the current state of what key is pressed
         self.left_pressed: bool = False
@@ -215,6 +216,9 @@ class GameWindow(arcade.Window):
         # Add to player sprite list
         self.player_list.append(self.player_sprite)
 
+        # Moving Sprite
+        self.moving_sprites_list = tile_map.sprite_lists['Moving Platforms']
+
         # --- Pymunk Physics Engine Setup ---
 
         # The default damping for every object controls the percent of velocity
@@ -229,7 +233,8 @@ class GameWindow(arcade.Window):
         gravity = (0, -GRAVITY)
 
         # Create the physics engine
-        self.physics_engine = arcade.PymunkPhysicsEngine(damping=damping,gravity=gravity)
+        self.physics_engine = arcade.PymunkPhysicsEngine(damping=damping,
+                                                        gravity=gravity)
 
         def wall_hit_handler(bullet_sprite, _wall_sprite, _arbiter, _space, _data):
             """ Called for bullet/wall collision """
@@ -278,6 +283,10 @@ class GameWindow(arcade.Window):
         self.physics_engine.add_sprite_list(self.item_list,
                                             friction=DYNAMIC_ITEM_FRICTION,
                                             collision_type="item")
+
+        # Add kinematic sprites
+        self.physics_engine.add_sprite_list(self.moving_sprites_list,
+                                            body_type=arcade.PymunkPhysicsEngine.KINEMATIC)
 
     def on_key_press(self, key, modifiers):
         """Called whenever a key is pressed. """
@@ -385,10 +394,37 @@ class GameWindow(arcade.Window):
         # Move items in the physics engine
         self.physics_engine.step()
 
+        # For each moving sprite, see if we've reached a boundary and need to
+        # reverse course.
+        for moving_sprite in self.moving_sprites_list:
+            if moving_sprite.boundary_right and \
+                    moving_sprite.change_x > 0 and \
+                    moving_sprite.right > moving_sprite.boundary_right:
+                moving_sprite.change_x *= -1
+            elif moving_sprite.boundary_left and \
+                    moving_sprite.change_x < 0 and \
+                    moving_sprite.left > moving_sprite.boundary_left:
+                moving_sprite.change_x *= -1
+            if moving_sprite.boundary_top and \
+                    moving_sprite.change_y > 0 and \
+                    moving_sprite.top > moving_sprite.boundary_top:
+                moving_sprite.change_y *= -1
+            elif moving_sprite.boundary_bottom and \
+                    moving_sprite.change_y < 0 and \
+                    moving_sprite.bottom < moving_sprite.boundary_bottom:
+                moving_sprite.change_y *= -1
+
+            # Figure out and set our moving platform velocity.
+            # Pymunk uses velocity is in pixels per second. If we instead have
+            # pixels per frame, we need to convert.
+            velocity = (moving_sprite.change_x * 1 / delta_time, moving_sprite.change_y * 1 / delta_time)
+            self.physics_engine.set_velocity(moving_sprite, velocity)
+
     def on_draw(self):
         """ Draw everything """
         self.clear()
         self.wall_list.draw()
+        self.moving_sprites_list.draw()
         self.bullet_list.draw()
         self.item_list.draw()
         self.player_list.draw()
