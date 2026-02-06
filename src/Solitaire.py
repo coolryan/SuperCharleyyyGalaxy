@@ -50,6 +50,9 @@ PLAY_PILE_1, PLAY_PILE_2, PLAY_PILE_3, PLAY_PILE_4 = 2, 3, 4, 5
 PLAY_PILE_5, PLAY_PILE_6, PLAY_PILE_7 = 6, 7, 8
 TOP_PILE_1, TOP_PILE_2, TOP_PILE_3, TOP_PILE_4 = 9, 10, 11, 12
 
+# Face down image
+FACE_DOWN_IMAGE = ":resources:images/cards/cardBack_red2.png"
+
 class Card(arcade.Sprite):
     """ Card sprite """
 
@@ -62,9 +65,23 @@ class Card(arcade.Sprite):
 
         # Image to use for the sprite when face up
         self.image_file_name = f":resources:images/cards/card{self.suit}{self.value}.png"
+        self.is_face_up = False
+        super().__init__(FACE_DOWN_IMAGE, scale, hit_box_algorithm="None")
 
-        # Call the parent
-        super().__init__(self.image_file_name, scale, hit_box_algorithm="None")
+    def face_down(self):
+        """ Turn card face-down """
+        self.texture = arcade.load_texture(FACE_DOWN_IMAGE)
+        self.is_face_up = False
+
+    def face_up(self):
+        """ Turn card face-up """
+        self.texture = arcade.load_texture(self.image_file_name)
+        self.is_face_up = True
+
+    @property
+    def is_face_down(self):
+        """ Is this card face down? """
+        return not self.is_face_up
 
 class MyGame(arcade.Window):
     """ Main application class. """
@@ -164,6 +181,10 @@ class MyGame(arcade.Window):
                 # Put on top in draw order
                 self.pull_to_top(card)
 
+        # Flip up the top cards
+        for i in range(PLAY_PILE_1, PLAY_PILE_7 + 1):
+            self.piles[i][-1].face_up()
+
     def on_draw(self):
         """ Render the screen. """
         # Clear the screen
@@ -182,6 +203,12 @@ class MyGame(arcade.Window):
         self.card_list.remove(card)
         self.card_list.append(card)
 
+    def on_key_press(self, symbol: int, modifiers: int):
+        """ User presses a key. """
+
+        if symbol == arcade.key.R:
+            self.setup()
+
     def on_mouse_press(self, x, y, button, key_modifiers):
         """ Called when the user presses a mouse button. """
 
@@ -193,23 +220,75 @@ class MyGame(arcade.Window):
 
             # Might be a stack of cards, get the top one
             primary_card = cards[-1]
+            assert isinstance(primary_card, Card)
+
             # Figure out what pile the card is in
             pile_index = self.get_pile_for_card(primary_card)
 
-            # All other cases, grab the face-up card we are clicking on
-            self.held_cards = [primary_card]
-            # Save the position
-            self.held_cards_original_position = [self.held_cards[0].position]
-            # Put on top in drawing order
-            self.pull_to_top(self.held_cards[0])
+            # Are we clicking on the bottom deck, to flip three cards?
+            if pile_index == BOTTOM_FACE_DOWN_PILE:
+                # Flip three cards
+                for i in range(3):
+                    # If we ran out of cards, stop
+                    if len(self.piles[BOTTOM_FACE_DOWN_PILE]) > 0:
+                        break
 
-            # Is this a stack of cards? If so, grab the other cards too
-            card_index = self.piles[pile_index].index(primary_card)
-            for i in range(card_index + 1, len(self.piles[pile_index])):
-                card = self.piles[pile_index][i]
-                self.held_cards.append(card)
-                self.held_cards_original_position.append(card.position)
-                self.pull_to_top(card)
+                    # Get Top card
+                    card = self.piles[BOTTOM_FACE_DOWN_PILE][-1]
+
+                    # Flip face up
+                    card.face_up()
+
+                    # Move card position to bottom-right face up pile
+                    card.position = self.pile_mat_list[BOTTOM_FACE_UP_PILE].position
+
+                    # Remove card position to bottom-right face up pile
+                    self.piles[BOTTOM_FACE_DOWN_PILE].remove(card)
+
+                    # Move card to face up list
+                    self.piles[BOTTOM_FACE_UP_PILE].append(card)
+
+                    # Put on top draw-order wise
+                    self.pull_to_top(card)
+
+            elif primary_card.is_face_down:
+                # Is the card face down? In one of those middle 7 piles? Then flip up
+                primary_card.face_up()
+            else:
+                # All other cases, grab the face-up card we are clicking on
+                self.held_cards = [primary_card]
+                # Save the position
+                self.held_cards_original_position = [self.held_cards[0].position]
+                # Put on top in drawing order
+                self.pull_to_top(self.held_cards[0])
+
+                # Is this a stack of cards? If so, grab the other cards too
+                card_index = self.piles[pile_index].index(primary_card)
+                for i in range(card_index + 1, len(self.piles[pile_index])):
+                    card = self.piles[pile_index][i]
+                    self.held_cards.append(card)
+                    self.held_cards_original_position.append(card.position)
+                    self.pull_to_top(card)
+        else:
+            # Click on a mat instead of a card?
+            mats = arcade.get_sprites_at_point((x, y), self.pile_mat_list)
+
+            if len(mats) > 0:
+                mat = mats[0]
+                mat_index = self.pile_mat_list.index(mat)
+
+                # Is it our turned over flip mat? and no cards on it?
+                if (
+                    mat_index == BOTTOM_FACE_UP_PILE and
+                    len(self.piles[BOTTOM_FACE_UP_PILE]) == 0
+                ):
+                    # Flip the deck back over so we can restart
+                    temp_list = self.piles[BOTTOM_FACE_DOWN_PILE].copy()
+                    for card in reversed(temp_list):
+                        card.face_down()
+                        self.piles[BOTTOM_FACE_DOWN_PILE].remove(card)
+                        self.piles[BOTTOM_FACE_UP_PILE].append(card)
+                        card.position = self.pile_mat_list[BOTTOM_FACE_DOWN_PILE].position
 
     def remove_card_from_pile(self, card):
         """ Remove card from whatever pile it was in. """
@@ -229,7 +308,8 @@ class MyGame(arcade.Window):
         self.remove_card_from_pile(card)
         self.piles[pile_index].append(card)
 
-    def on_mouse_release(self, x: float, y: float, button: int, modifiers: int):
+    def on_mouse_release(self, x: float, y: float, button: int,
+                        modifiers: int):
         """ Called when the user presses a mouse button. """
 
         # If we don't have any cards, who cares
