@@ -1,4 +1,5 @@
 import random, arcade
+from pyglet.math import Vec2
 from arcade.experimental import Shadertoy
 
 # Do the math to figure out our screen dimensions
@@ -13,9 +14,8 @@ PLAYER_MOVEMENT_SPEED, BOMB_COUNT = 7, 70
 PLAYING_FIELD_WIDTH, PLAYING_FIELD_HEIGHT = 1600,1600
 
 class MyGame(arcade.Window):
-
     def __init__(self, width, height, title):
-        super().__init__(width, height, title)
+        super().__init__(width, height, title, resizable=True)
 
         # The shader toy and 'channels' we'll be using
         self.shadertoy = None
@@ -35,7 +35,15 @@ class MyGame(arcade.Window):
         self.bomb_list = arcade.SpriteList()
         self.physics_engine = None
 
+        # Create cameras used for scrolling
+        self.camer_sprites = arcade.Camera2D()
+        self.camer_gui = arcade.Camera2D()
+
         self.generate_sprites()
+
+        # Our sample GUI text
+        self.score_text = arcade.Text("Score: 0", 10, 10, arcade.color.WHITE, 24)
+
         self.background_color = arcade.color.ARMY_GREEN
 
     def load_shader(self):
@@ -43,7 +51,7 @@ class MyGame(arcade.Window):
         window_size = self.get_size()
 
         # Create the shader toy, passing in a path for the shader source
-        self.shadertoy = Shadertoy.create_from_file(window_size, "step_03.glsl")
+        self.shadertoy = Shadertoy.create_from_file(window_size, "src/shader.glsl")
 
         # Create the channels 0 and 1 frame buffers.
         # Make the buffer the size of the window, with 4 channels (RGBA)
@@ -80,13 +88,16 @@ class MyGame(arcade.Window):
                     placed = True
             self.bomb_list.append(bomb)
 
-        # Add player sprite to sprite list
+        # Add the player to the player list
         self.player_list.append(self.player_sprite)
 
         # Physics engine, so we don't run into walls
         self.physics_engine = arcade.PhysicsEngineSimple(self.player_sprite, self.wall_list)
 
     def on_draw(self):
+        # use our scrolled camera
+        self.camer_sprites.use()
+
         # Select the channel 0 frame buffer to draw on
         self.channel0.use()
         self.channel0.clear()
@@ -102,12 +113,32 @@ class MyGame(arcade.Window):
         self.use()
         # Clear to background color
         self.clear()
-        # Run the shader and render to the window
-        self.shadertoy.program['lightPosition'] = self.player_sprite.position
+
+        # Calculate the light positions. We have to subtract the camer position
+        # from the player position to get screen-relative coordinates.
+        left, bottom = self.camer_sprites.bottom_left
+        p = (self.player_sprite.position[0] - left, 
+            self.player_sprite.position[1] - bottom
+        )
+
+        # Set the uniform data
+        self.shadertoy.program['lightPosition'] = p
         self.shadertoy.program['lightSize'] = 300
+
+        # Run the shader and render to the window
         self.shadertoy.render()
+
+        # Draw the walls
+        self.wall_list.draw()
+
         # Draw the player
         self.player_list.draw()
+
+        # Switch to the un-scrolled camera to draw the GUI with
+        self.camer_gui.use()
+
+        # Draw our sample GUI text
+        self.score_text.draw()
 
     def on_key_press(self, key, modifiers):
         """Called whenever a key is pressed. """
@@ -135,6 +166,30 @@ class MyGame(arcade.Window):
         # Call update on all sprites (The sprites don't do much in this
         # example though.)
         self.physics_engine.update()
+
+        # Scroll the screen to the player
+        self.scroll_to_player()
+
+    def scroll_to_player(self, speed=CAMERA_SPEED):
+        """ Scroll the window to the player.
+
+        if CAMERA_SPEED is 1, the camera will immediately move to the desired position.
+        Anything between 0 and 1 will have the camera move to the location with a smoother
+        pan. """
+
+        position = (self.player_sprite.center_x, self.player_sprite.center_y)
+        self.camer_sprites.position = arcade.math.lerp_2d(self.camer_sprites.position, position, speed)
+
+    def on_resize(self, width: int, height: int):
+        """Called when the user resizes the window."""
+        super().on_resize(width, height)
+
+        self.camer_sprites.match_window()
+        self.camer_gui.match_window()
+
+        # Update the shader toy and channels to the new window size
+        self.shadertoy.resize((width, height))
+
 
 if __name__ == "__main__":
     MyGame(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
