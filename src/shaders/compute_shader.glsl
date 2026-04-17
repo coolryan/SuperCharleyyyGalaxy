@@ -1,34 +1,38 @@
 #version 430
 
 // Set up our compute groups.
-// THE COMPUTE_SIZE_X and COMPUTE_SIZE-Y values will be replaced
-// by the python code with actual values. This data does not happen
+// The COMPUTE_SIZE_X and COMPUTE_SIZE_Y values will be replaced
+// by the Python code with actual values. This does not happen
 // automatically, and must be called manually.
 layout(local_size_x=COMPUTE_SIZE_X, local_size_y=COMPUTE_SIZE_Y) in;
 
 // Input uniforms would go here if you need them.
-// The examples below match the ones commented out in compute_shader.py
-// unifrom vec2 screen_size;
-// uniform float frame_time;
+// The examples below match the ones commented out in main.py
+//uniform vec2 screen_size;
+//uniform float frame_time;
 
 // Structure of the star data
-struct Star {
+struct Star
+{
     vec4 pos;
     vec4 vel;
     vec4 color;
 };
 
 // Input buffer
-layout(std430, binding=0) buffer stars_in {
+layout(std430, binding=0) buffer stars_in
+{
     Star stars[];
 } In;
 
 // Output buffer
-layout(std430, binding=0) buffer stars_out {
+layout(std430, binding=1) buffer stars_out
+{
     Star stars[];
 } Out;
 
-void main() {
+void main()
+{
     int curStarIndex = int(gl_GlobalInvocationID);
 
     Star in_star = In.stars[curStarIndex];
@@ -40,15 +44,15 @@ void main() {
     p.xy += v.xy;
 
     // Calculate the new force based on all the other bodies
-    for (int i = 0; i < In.stars.length(; i++)) {
+    for (int i=0; i < In.stars.length(); i++) {
         // If enabled, this will keep the star from calculating gravity on itself
         // However, it does slow down the calcluations do do this check.
         //  if (i == x)
         //      continue;
 
-        // Calcuate distance squared
+        // Calculate distance squared
         float dist = distance(In.stars[i].pos.xyzw.xy, p.xy);
-        float distanceSquard = dist * dist;
+        float distanceSquared = dist * dist;
 
         // If distance is too small, extremely high forces can result and
         // fling the star into escape velocity and forever off the screen.
@@ -59,12 +63,10 @@ void main() {
         float force = min(minDistance, gravityStrength / distanceSquared) * -simulationSpeed;
 
         vec2 diff = p.xy - In.stars[i].pos.xyzw.xy;
-
         // We should normalize this I think, but it doesn't work.
         //  diff = normalize(diff);
-
-        vec2 delta_y = diff * force;
-        v.xy += delta_y;
+        vec2 delta_v = diff * force;
+        v.xy += delta_v;
     }
 
     Star out_star;
